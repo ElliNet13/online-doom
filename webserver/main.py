@@ -1,12 +1,19 @@
+import gevent.monkey
+gevent.monkey.patch_all()
+
 from flask import Flask, Response, send_from_directory
 import numpy as np
 from turbojpeg import TurboJPEG
 import os
+from flask_socketio import SocketIO, emit
+import select
 
 app = Flask(__name__)
 jpeg_encoder = TurboJPEG()
+socketio = SocketIO(app, async_mode="gevent")
 
-PIPE_PATH = "/tmp/doom_pipe"
+PIPE_VIDEO_PATH = "/tmp/doom_video_pipe"
+PIPE_INPUT_PATH = "/tmp/doom_input_pipe"
 WIDTH, HEIGHT = 320, 200
 
 # Wait for palette
@@ -23,23 +30,28 @@ if PALETTE.max() <= 63:
     PALETTE = (PALETTE * 4).clip(0, 255).astype(np.uint8)
 
 # Create named pipe if it doesn't exist
-if not os.path.exists(PIPE_PATH):
-    os.mkfifo(PIPE_PATH)
+if not os.path.exists(PIPE_VIDEO_PATH):
+    os.mkfifo(PIPE_VIDEO_PATH)
+
+if not os.path.exists(PIPE_INPUT_PATH):
+    os.mkfifo(PIPE_INPUT_PATH)
 
 def get_latest_frame():
-    """Read the latest frame from Doom pipe, dropping old ones."""
+    """Read the latest frame from Doom video pipe, non-blocking."""
+    if not os.path.exists(PIPE_VIDEO_PATH):
+        os.mkfifo(PIPE_VIDEO_PATH)
     while True:
-        if os.path.exists(PIPE_PATH):
-            with open(PIPE_PATH, "rb") as f:
-                # Drop everything except latest frame
-                while True:
-                    data = f.read(WIDTH * HEIGHT)
-                    if len(data) != WIDTH * HEIGHT:
-                        break
-                    rgb = PALETTE[np.frombuffer(data, dtype=np.uint8)].reshape((HEIGHT, WIDTH, 3))
-                    # We need BGR for jpeg
-                    bgr = rgb[:, :, ::-1]
-                    yield bgr
+        with open(PIPE_VIDEO_PATH, "rb") as f:
+            while True:
+                rlist, _, _ = select.select([f], [], [], 0.1)  # 0.1 sec timeout
+                if not rlist:
+                    break  # No data ready, yield to server
+                data = f.read(WIDTH * HEIGHT)
+                if len(data) != WIDTH * HEIGHT:
+                    break
+                rgb = PALETTE[np.frombuffer(data, dtype=np.uint8)].reshape((HEIGHT, WIDTH, 3))
+                bgr = rgb[:, :, ::-1]
+                yield bgr
 
 def generate_mjpeg():
     for frame in get_latest_frame():
@@ -54,6 +66,23 @@ def video_feed():
     return Response(generate_mjpeg(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
+def send_to_doom(action, state):
+    try:
+        with open(PIPE_INPUT_PATH, "w") as pipe:
+            pipe.write(f"{action}:{state}\n")
+            pipe.flush()
+    except Exception as e:
+        print("Failed to write to Doom input pipe:", e)
+        
+# Handle messages from the client
+@socketio.on("input_event")
+def handle_input(data):
+    action = data.get("action")
+    state = data.get("state")
+    if action and state:
+        send_to_doom(action, state)
+
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 @app.route('/')
 def serve_index():
@@ -63,6 +92,6 @@ def serve_index():
 def serve_static(filename):
     return send_from_directory(STATIC_DIR, filename)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Starting web server on http://0.0.0.0:5000/")
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host="0.0.0.0", port=5000)

@@ -10,7 +10,7 @@
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// GNU General Public License for more details.a
 //
 // DESCRIPTION:
 //     SDL implementation of system-specific input interface.
@@ -27,6 +27,16 @@
 #include "i_input.h"
 #include "m_argv.h"
 #include "m_config.h"
+
+// Again, these includes are POSIX-specific and will need to be
+// removed for Windows support.
+// Well if they are POSIX-specific, I forget which ones are
+// POSIX-specific.
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
+#include <unistd.h>
 
 static const int scancode_translate_table[] = SCANCODE_TO_KEYS_ARRAY;
 
@@ -71,6 +81,9 @@ static const char shiftxform[] =
     'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
     '{', '|', '}', '~', 127
 };
+
+// Pipe
+const char PIPE_INPUT_PATH[] = "/tmp/doom_input_pipe";
 
 // If true, I_StartTextInput() has been called, and we are populating
 // the data3 field of ev_keydown events.
@@ -470,4 +483,88 @@ void I_BindInputVariables(void)
     M_BindIntVariable("mouse_threshold",           &mouse_threshold);
     M_BindIntVariable("vanilla_keyboard_mapping",  &vanilla_keyboard_mapping);
     M_BindIntVariable("novert",                    &novert);
+}
+
+// Ok time for my own functions
+static int pipe_fd = -1;
+
+static void OpenInputPipe(void)
+{
+    if (pipe_fd >= 0)
+        return;
+
+    pipe_fd = open(PIPE_INPUT_PATH, O_RDONLY | O_NONBLOCK);
+    if (pipe_fd < 0)
+    {
+        perror("Failed to open input pipe");
+    }
+}
+
+// Convert ASCII key name to Doom key code
+static int ASCIIToKeyCode(const char *name)
+{
+    if (strcmp(name, "UP") == 0) return KEY_UPARROW;
+    if (strcmp(name, "DOWN") == 0) return KEY_DOWNARROW;
+    if (strcmp(name, "LEFT") == 0) return KEY_LEFTARROW;
+    if (strcmp(name, "RIGHT") == 0) return KEY_RIGHTARROW;
+    if (strcmp(name, "FIRE") == 0) return KEY_RCTRL;
+    if (strcmp(name, "USE") == 0)  return KEY_RCTRL;
+    return 0;
+}
+
+
+void I_ReadPipeEvents(void)
+{
+    char buffer[256];
+    ssize_t n;
+    int done = 0;
+
+    char *line;      // declare all variables at the top
+    char *keyname;
+    char *action;
+    char *sep;
+    int keycode;
+    event_t ev;
+
+    OpenInputPipe();
+    if (pipe_fd < 0)
+        return;
+
+    while (!done && (n = read(pipe_fd, buffer, sizeof(buffer) - 1)) > 0)
+    {
+        buffer[n] = 0; // null terminate
+
+        line = strtok(buffer, "\n");
+        while (line)
+        {
+            sep = strchr(line, ':');
+            if (sep)
+            {
+                *sep = 0;
+                keyname = line;
+                action  = sep + 1;
+                keycode = ASCIIToKeyCode(keyname);
+                if (keycode != 0)
+                {
+                    ev.type  = (strcmp(action, "down") == 0) ? ev_keydown : ev_keyup;
+                    ev.data1 = keycode;
+                    ev.data2 = keycode;
+                    ev.data3 = 0;
+                    D_PostEvent(&ev);
+                }
+            }
+            line = strtok(NULL, "\n");
+        }
+    }
+
+    if (n == 0)
+    {
+        close(pipe_fd);
+        pipe_fd = -1;
+        OpenInputPipe();
+    }
+    else if (n < 0 && errno != EAGAIN)
+    {
+        perror("Error reading from input pipe");
+    }
 }

@@ -2,3 +2,6 @@
 flask
 numpy
 PyTurboJPEG
+flask_socketio
+gevent 
+gevent-websocket

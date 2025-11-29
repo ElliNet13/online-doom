@@ -211,8 +211,8 @@ static const unsigned int *icon_data;
 static int icon_w;
 static int icon_h;
 
-// Pipe name
-const char *PIPE_PATH = "/tmp/doom_pipe";
+// Pipe for video
+const char PIPE_VIDEO_PATH[] = "/tmp/doom_video_pipe";
 
 static boolean MouseShouldBeGrabbed()
 {
@@ -433,6 +433,9 @@ void I_GetEvent(void)
     SDL_Event sdlevent;
 
     SDL_PumpEvents();
+
+    // Read any events from the pipe
+    I_ReadPipeEvents();
 
     while (SDL_PollEvent(&sdlevent))
     {
@@ -711,12 +714,12 @@ static void CreateUpscaledTexture(boolean force)
 ///
 static void HS_WriteFrameToPipe(void)
 {
-    int fd = open(PIPE_PATH, O_WRONLY | O_NONBLOCK);
+    int fd = open(PIPE_VIDEO_PATH, O_WRONLY | O_NONBLOCK);
 
     // Check if the file exists
-    if (access(PIPE_PATH, F_OK) == -1) {
+    if (access(PIPE_VIDEO_PATH, F_OK) == -1) {
         // File doesn't exist, create a named pipe (FIFO)
-        if (mkfifo(PIPE_PATH, 0666) != 0) {
+        if (mkfifo(PIPE_VIDEO_PATH, 0666) != 0) {
             perror("mkfifo failed");
         }
     }
