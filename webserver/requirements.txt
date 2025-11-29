@@ -1,3 +1,4 @@
+# Pip requirements for webserver
 flask
 numpy
-Pillow
+opencv-python

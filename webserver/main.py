@@ -1,48 +1,69 @@
-from flask import Flask, Response
+from flask import Flask, Response, send_from_directory
 import numpy as np
+import cv2
 import os
-import time
-from io import BytesIO
-from PIL import Image
 
 app = Flask(__name__)
 
-# Wait for palette file
-palette_path = "/tmp/doom_palette.txt"
-while not os.path.exists(palette_path):
-    print(f"Waiting for {palette_path}...")
-    time.sleep(0.1)
-
-# Load palette
-PALETTE = np.loadtxt(palette_path, dtype=np.uint8)  # shape (256,3)
-
-# Doom resolution (adjust if needed)
-WIDTH, HEIGHT = 320, 200
 PIPE_PATH = "/tmp/doom_pipe"
+WIDTH, HEIGHT = 320, 200
 
-def frame_generator():
+# Wait for palette
+palette_path = "/tmp/doom_palette.txt"
+hasSaidWaiting = False
+while not os.path.exists(palette_path):
+    if not hasSaidWaiting:
+        print("Waiting for palette...")
+        hasSaidWaiting = True
+PALETTE = np.loadtxt(palette_path, dtype=np.uint8).astype(np.float32)
+
+# Doom palette is often 0–63, scale to 0–255
+if PALETTE.max() <= 63:
+    PALETTE = (PALETTE * 4).clip(0, 255).astype(np.uint8)
+
+# Create named pipe if it doesn't exist
+if not os.path.exists(PIPE_PATH):
+    os.mkfifo(PIPE_PATH)
+
+def get_latest_frame():
+    """Read the latest frame from Doom pipe, dropping old ones."""
     while True:
         if os.path.exists(PIPE_PATH):
             with open(PIPE_PATH, "rb") as f:
-                data = f.read(WIDTH * HEIGHT)
-                if len(data) != WIDTH * HEIGHT:
-                    continue
-                # Map 8-bit indices to RGB
-                rgb = PALETTE[np.frombuffer(data, dtype=np.uint8)].reshape((HEIGHT, WIDTH, 3))
-                # Convert to JPEG in memory
-                img = Image.fromarray(rgb, mode="RGB")
-                buf = BytesIO()
-                img.save(buf, format="JPEG")
-                frame_bytes = buf.getvalue()
-                # Yield MJPEG frame
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.01)
+                # Drop everything except latest frame
+                while True:
+                    data = f.read(WIDTH * HEIGHT)
+                    if len(data) != WIDTH * HEIGHT:
+                        break
+                    rgb = PALETTE[np.frombuffer(data, dtype=np.uint8)].reshape((HEIGHT, WIDTH, 3))
+                    yield rgb
 
-@app.route("/stream")
-def stream():
-    return Response(frame_generator(),
+def generate_mjpeg():
+    for frame in get_latest_frame():
+        # Convert RGB → BGR for OpenCV
+        bgr = frame[:, :, ::-1]
+
+        success, jpeg = cv2.imencode('.jpg', bgr)
+        if not success:
+            continue
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_mjpeg(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+@app.route('/')
+def serve_index():
+    return send_from_directory(STATIC_DIR, "index.html")
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    return send_from_directory(STATIC_DIR, filename)
+
+if __name__ == '__main__':
+    print("Starting web server on http://0.0.0.0:5000/")
+    app.run(host='0.0.0.0', port=5000)

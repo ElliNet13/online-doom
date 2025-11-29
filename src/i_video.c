@@ -48,7 +48,7 @@
 #include "w_wad.h"
 #include "z_zone.h"
 
-// These 2 following includes will probably need to be removed for Windows
+// These following includes will probably need to be removed for Windows
 // support, as they are POSIX-specific.
 #include <fcntl.h>   // For open(), O_WRONLY, O_NONBLOCK
 #include <unistd.h>  // For write(), close()
@@ -210,6 +210,9 @@ unsigned int joywait = 0;
 static const unsigned int *icon_data;
 static int icon_w;
 static int icon_h;
+
+// Pipe name
+const char *PIPE_PATH = "/tmp/doom_pipe";
 
 static boolean MouseShouldBeGrabbed()
 {
@@ -708,7 +711,16 @@ static void CreateUpscaledTexture(boolean force)
 ///
 static void HS_WriteFrameToPipe(void)
 {
-    int fd = open("/tmp/doom_pipe", O_WRONLY | O_NONBLOCK);
+    int fd = open(PIPE_PATH, O_WRONLY | O_NONBLOCK);
+
+    // Check if the file exists
+    if (access(PIPE_PATH, F_OK) == -1) {
+        // File doesn't exist, create a named pipe (FIFO)
+        if (mkfifo(PIPE_PATH, 0666) != 0) {
+            perror("mkfifo failed");
+        }
+    }
+
     if (fd >= 0)
     {
         // I_VideoBuffer is the 8-bit frame
