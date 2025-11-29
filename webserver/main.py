@@ -1,9 +1,10 @@
 from flask import Flask, Response, send_from_directory
 import numpy as np
-import cv2
+from turbojpeg import TurboJPEG
 import os
 
 app = Flask(__name__)
+jpeg_encoder = TurboJPEG()
 
 PIPE_PATH = "/tmp/doom_pipe"
 WIDTH, HEIGHT = 320, 200
@@ -15,7 +16,7 @@ while not os.path.exists(palette_path):
     if not hasSaidWaiting:
         print("Waiting for palette...")
         hasSaidWaiting = True
-PALETTE = np.loadtxt(palette_path, dtype=np.uint8).astype(np.float32)
+PALETTE = np.loadtxt(palette_path, dtype=np.uint8)
 
 # Doom palette is often 0–63, scale to 0–255
 if PALETTE.max() <= 63:
@@ -36,19 +37,17 @@ def get_latest_frame():
                     if len(data) != WIDTH * HEIGHT:
                         break
                     rgb = PALETTE[np.frombuffer(data, dtype=np.uint8)].reshape((HEIGHT, WIDTH, 3))
-                    yield rgb
+                    # We need BGR for jpeg
+                    bgr = rgb[:, :, ::-1]
+                    yield bgr
 
 def generate_mjpeg():
     for frame in get_latest_frame():
-        # Convert RGB → BGR for OpenCV
-        bgr = frame[:, :, ::-1]
 
-        success, jpeg = cv2.imencode('.jpg', bgr)
-        if not success:
-            continue
+        jpeg = jpeg_encoder.encode(frame, quality=80)
 
         yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg + b'\r\n')
 
 @app.route('/video_feed')
 def video_feed():

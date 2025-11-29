@@ -1,4 +1,4 @@
 # Pip requirements for webserver
 flask
 numpy
-opencv-python
+PyTurboJPEG
