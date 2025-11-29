@@ -4,22 +4,30 @@
 	"name": "Doom Dev Container",
 	"context": "..",
 	"dockerFile": "./Dockerfile",
+	"forwardPorts": [5000],
 	
-	"extensions": [
-		"yzhang.markdown-all-in-one",
-		"bierner.markdown-preview-github-styles",
-		"dotjoshjohnson.xml",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"yzhang.markdown-all-in-one",
+				"bierner.markdown-preview-github-styles",
+				"dotjoshjohnson.xml",
 
-		"eamodio.gitlens",
-		"npxms.hide-gitignored",  // Note: need to run its command manually
+				"eamodio.gitlens",
+				"npxms.hide-gitignored",  // Note: need to run its command manually
 
-		// Build tooling
-		"ms-vscode.cpptools",
-		"cschlosser.doxdocgen",
-		"austin.code-gnu-global",
-		"jeff-hykin.better-cpp-syntax", // Note: runs locally
-		"ms-vscode.cpptools-themes", // Note: runs locally
-	],
+				// Build tooling
+				"ms-vscode.cpptools",
+				"cschlosser.doxdocgen",
+				"austin.code-gnu-global",
+				"jeff-hykin.better-cpp-syntax", // Note: runs locally
+				"ms-vscode.cpptools-themes", // Note: runs locally
+
+				// Web server tooling
+				"ms-python.python"
+			]
+		}
+	},
 
 	// Required to not bleed "root" permission files into the host volume
 	"containerUser": "chocodev",

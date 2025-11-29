@@ -1,3 +1,18 @@
+# Online Doom
+This is a fork of Chocolate Doom, which is a Doom source port. This fork
+allows doom to be played on the web. This requires a server because
+it runs on the server.
+Windows might not be supported for the server though any modern
+web browser should be able to play the game.
+This uses flask to run the server and Chocolate Doom to run the game.
+They talk to each other with FIFO pipes meaning there will be
+a little bit of setup before running the game.
+Before running the game you need to make the pipes:
+```bash
+mkfifo /tmp/doompipe
+```
+then you can go compile the game and run the server.
+
 # Chocolate Doom
 
 Chocolate Doom aims to accurately reproduce the original DOS version of

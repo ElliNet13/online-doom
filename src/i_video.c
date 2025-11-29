@@ -48,6 +48,11 @@
 #include "w_wad.h"
 #include "z_zone.h"
 
+// These 2 following includes will probably need to be removed for Windows
+// support, as they are POSIX-specific.
+#include <fcntl.h>   // For open(), O_WRONLY, O_NONBLOCK
+#include <unistd.h>  // For write(), close()
+
 // These are (1) the window (or the full screen) that our game is rendered to
 // and (2) the renderer that scales the texture (see below) into this window.
 
@@ -698,6 +703,32 @@ static void CreateUpscaledTexture(boolean force)
     }
 }
 
+///
+/// HS_WriteFrameToPipe
+///
+static void HS_WriteFrameToPipe(void)
+{
+    int fd = open("/tmp/doom_pipe", O_WRONLY | O_NONBLOCK);
+    if (fd >= 0)
+    {
+        // I_VideoBuffer is the 8-bit frame
+        write(fd, I_VideoBuffer, SCREENWIDTH * SCREENHEIGHT);
+        close(fd);
+    }
+}
+
+///
+/// DumpPaletteToFile
+///
+static void DumpPaletteToFile(void)
+{
+    FILE *f = fopen("/tmp/doom_palette.txt", "w");
+    if (!f) return;
+    for (int i = 0; i < 256; i++)
+        fprintf(f, "%d %d %d\n", palette[i].r, palette[i].g, palette[i].b);
+    fclose(f);
+}
+
 //
 // I_FinishUpdate
 //
@@ -818,6 +849,8 @@ void I_FinishUpdate (void)
     // Draw!
 
     SDL_RenderPresent(renderer);
+    HS_WriteFrameToPipe();
+    DumpPaletteToFile();
 
     // Restore background and undo the disk indicator, if it was drawn.
     V_RestoreDiskBackground();

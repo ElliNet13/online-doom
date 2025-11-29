@@ -1,5 +1,5 @@
 # Coding style guidelines
-
+## The following are guidelines for writing code in C
 The coding style guidelines for Chocolate Doom are designed to keep the
 style of the original source code.  This maintains consistency throughout
 the program, and does not require the original code to be changed. Some
